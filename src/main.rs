@@ -1,10 +1,8 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use flate2::read::ZlibDecoder;
-use std::env;
 use std::ffi::CStr;
 use std::fs;
-use std::fs::write;
 use std::fs::File;
 use std::io;
 use std::io::prelude::*;
@@ -71,23 +69,17 @@ fn main() -> anyhow::Result<()> {
                 _ => anyhow::bail!("we do not yet know how to print a '{kind}'"),
             };
             let size = size
-                .parse::<usize>()
+                .parse::<u64>()
                 .context(".git/objects file header has invalid size: {size}.")?;
-            buf.clear();
-            buf.resize(size, 0);
-            z.read_exact(&mut buf[..])
-                .context("read true contents from .git/objects")?;
-            let n = z
-                .read(&mut [0])
-                .context("validate EOF in .git/objects file")?;
-            anyhow::ensure!(n == 0, ".git/objects file had {n} trailing bytes");
-            let stdout = std::io::stdout();
-            let mut stdout = stdout.lock();
-
+            let mut z = z.take(size);
             match kind {
-                Kind::Blob => stdout
-                    .write_all(&buf)
-                    .context("write content objects into stdout.")?,
+                Kind::Blob => {
+                    let stdout = std::io::stdout();
+                    let mut stdout = stdout.lock();
+                    let n = std::io::copy(&mut z, &mut stdout)
+                        .context("write .git/objects file to the stdout")?;
+                    anyhow::ensure!(n == size, ".git/objects file was not the expected size: (expected: {size}, actual: {n})");
+                }
             }
         }
     }
