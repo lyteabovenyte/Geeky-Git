@@ -7,7 +7,7 @@ use sha1::{Digest, Sha1};
 use std::ffi::CStr;
 use std::fs;
 use std::fs::File;
-use std::io::prelude::*;
+use std::io::prelude::* 
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
@@ -98,19 +98,19 @@ fn main() -> anyhow::Result<()> {
             {
                 let stat =
                     std::fs::metadata(&file).with_context(|| format!("stat {}", file.display()))?;
-                let writer = HashWriter {
-                    writer,
+                let zlib_writer = ZlibEncoder::new(writer, Compression::default());
+                let mut writer = HashWriter {
+                    writer: zlib_writer,
                     hasher: Sha1::new(),
                 };
 
-                let mut e = ZlibEncoder::new(writer, Compression::default());
-                write!(e, "blob ")?;
-                write!(e, "{}\0", stat.len())?;
+                write!(writer, "blob ")?;
+                write!(writer, "{}\0", stat.len())?;
                 let mut file = std::fs::File::open(&file)
                     .with_context(|| format!("stat {}", file.display()))?;
-                std::io::copy(&mut file, &mut e).context("Stream file into blob")?;
-                let compressed = e.finish()?;
-                let hash = compressed.hasher.finalize();
+                std::io::copy(&mut file, &mut writer).context("Stream file into blob")?;
+                let _ = writer.writer.finish()?;
+                let hash = writer.hasher.finalize();
                 Ok(hex::encode(hash))
             }
             let hash = if write {
