@@ -29,7 +29,7 @@ pub(crate) struct Object<R> {
 }
 
 impl Object<()> {
-    pub(crate) fn read(hash: &str) -> anyhow::Result<Object<impl Read>> {
+    pub(crate) fn read(hash: &str) -> anyhow::Result<Object<impl BufRead>> {
         let f = File::open(format!(".git/objects/{}/{}", &hash[..2], &hash[2..]))
             .context("open in .git/objects")?;
         let zl = ZlibDecoder::new(f);
