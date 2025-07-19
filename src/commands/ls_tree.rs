@@ -1,15 +1,19 @@
 use crate::objects::{Kind, Object};
 use anyhow::Context;
-use std::{ffi::CStr, io::BufRead};
+use std::{
+    ffi::CStr,
+    io::{BufRead, Read, Write},
+};
 
 pub(crate) fn invoke(name_only: bool, tree_hash: &str) -> anyhow::Result<()> {
-    anyhow::ensure!(name_only, "mode or -p must be given.");
-
     let mut object = Object::read(tree_hash).context("parse out tree file")?;
     // TODO: support shortest-unique object hashes
     match object.kind {
         Kind::Tree => {
             let mut buf = Vec::new();
+            let mut hashbuf = [0; 20];
+            let stdout = std::io::stdout();
+            let mut stdout = stdout.lock();
             loop {
                 buf.clear();
                 let n = object
@@ -19,6 +23,12 @@ pub(crate) fn invoke(name_only: bool, tree_hash: &str) -> anyhow::Result<()> {
                 if n == 0 {
                     break;
                 }
+
+                object
+                    .reader
+                    .read_exact(&mut hashbuf[..])
+                    .context("read tree entry object hash")?;
+
                 let mode_and_name =
                     CStr::from_bytes_with_nul(&buf).context("invalid tree entry")?;
                 let mut bits = mode_and_name.to_bytes().splitn(2, |&b| b == b' ');
@@ -26,16 +36,24 @@ pub(crate) fn invoke(name_only: bool, tree_hash: &str) -> anyhow::Result<()> {
                 let name = bits
                     .next()
                     .ok_or_else(|| anyhow::anyhow!("tree entry has no filename"))?;
+
+                if name_only {
+                    stdout
+                        .write_all(name)
+                        .context("write tree entry name to stdout")?;
+                } else {
+                    let mode = std::str::from_utf8(mode).context("mode is always valid utf-8")?;
+                    let hash = hex::encode(&hashbuf);
+                    let kind = "tree";
+                    write!(stdout, "{mode:0>6} {kind} {hash} ")
+                        .context("write tree entry meta to stdout")?;
+                    stdout
+                        .write_all(name)
+                        .context("write tree entry name to stdout")?;
+                }
+                writeln!(stdout, "").context("write newline to stdout")?;
+                buf.clear();
             }
-            let stdout = std::io::stdout();
-            let mut stdout = stdout.lock();
-            let n = std::io::copy(&mut object.reader, &mut stdout)
-                .context("write .git/objects file to the stdout")?;
-            anyhow::ensure!(
-                n == object.expected_size,
-                ".git/objects file was not the expected size: (expected: {}, actual: {n})",
-                object.expected_size
-            );
         }
         _ => anyhow::bail!("don't yet know how to ls '{}'", object.kind),
     }
