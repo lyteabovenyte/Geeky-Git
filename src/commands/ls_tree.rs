@@ -44,8 +44,9 @@ pub(crate) fn invoke(name_only: bool, tree_hash: &str) -> anyhow::Result<()> {
                 } else {
                     let mode = std::str::from_utf8(mode).context("mode is always valid utf-8")?;
                     let hash = hex::encode(&hashbuf);
-                    let kind = "tree";
-                    write!(stdout, "{mode:0>6} {kind} {hash} ")
+                    let object = Object::read(&hash)
+                        .with_context(|| format!("read object for tree entry {hash}"))?;
+                    write!(stdout, "{mode:0>6} {} {hash} ", object.kind)
                         .context("write tree entry meta to stdout")?;
                     stdout
                         .write_all(name)
