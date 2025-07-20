@@ -1,38 +1,60 @@
+use crate::objects::{Kind, Object};
 use anyhow::Context;
-use hex::encode;
+use std::cmp::Ordering;
+use std::fs;
+use std::io::Cursor;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::{fs, io::Cursor};
 
-use crate::objects::{Kind, Object};
-
-pub(crate) fn write_tree_for(path: &Path) -> anyhow::Result<Option<[u8; 20]>> {
+fn write_tree_for(path: &Path) -> anyhow::Result<Option<[u8; 20]>> {
     let mut dir =
         fs::read_dir(path).with_context(|| format!("open directory {}", path.display()))?;
 
     let mut entries = Vec::new();
     while let Some(entry) = dir.next() {
-        let entry = entry.with_context(|| format!("bad directory {}", path.display()))?;
-        entries.push(entry);
+        let entry = entry.with_context(|| format!("bad directory entry in {}", path.display()))?;
+        let name = entry.file_name();
+        let meta = entry.metadata().context("metadata for directory entry")?;
+        entries.push((entry, name, meta));
     }
     entries.sort_unstable_by(|a, b| {
-        let afn = a.file_name();
-        let bfn = b.file_name();
-        let mut afn = afn.into_encoded_bytes();
-        let mut bfn = bfn.into_encoded_bytes();
-        afn.push(0xff);
-        bfn.push(0xff);
-        afn.cmp(&bfn)
+        // git has very specific rules for how to compare names
+        // https://github.com/git/git/blob/e09f1254c54329773904fe25d7c545a1fb4fa920/tree.c#L99
+        let afn = &a.1;
+        let afn = afn.as_encoded_bytes();
+        let bfn = &b.1;
+        let bfn = bfn.as_encoded_bytes();
+        let common_len = std::cmp::min(afn.len(), bfn.len());
+        match afn[..common_len].cmp(&bfn[..common_len]) {
+            Ordering::Equal => {}
+            o => return o,
+        }
+        if afn.len() == bfn.len() {
+            return Ordering::Equal;
+        }
+        let c1 = if let Some(c) = afn.get(common_len).copied() {
+            Some(c)
+        } else if a.2.is_dir() {
+            Some(b'/')
+        } else {
+            None
+        };
+        let c2 = if let Some(c) = bfn.get(common_len).copied() {
+            Some(c)
+        } else if b.2.is_dir() {
+            Some(b'/')
+        } else {
+            None
+        };
+
+        c1.cmp(&c2)
     });
 
     let mut tree_object = Vec::new();
-    for entry in entries {
-        let file_name = entry.file_name();
+    for (entry, file_name, meta) in entries {
         if file_name == ".git" {
-            // skip the .git directory
             continue;
         }
-        let meta = entry.metadata().context("metadata for directory entry")?;
         let mode = if meta.is_dir() {
             "40000"
         } else if meta.is_symlink() {
@@ -43,37 +65,36 @@ pub(crate) fn write_tree_for(path: &Path) -> anyhow::Result<Option<[u8; 20]>> {
         } else {
             "100644"
         };
-
         let path = entry.path();
         let hash = if meta.is_dir() {
             let Some(hash) = write_tree_for(&path)? else {
-                // don't include in parent
+                // empty directory, so don't include in parent
                 continue;
             };
             hash
         } else {
-            let temp = "temporary";
+            let tmp = "temporary";
             let hash = Object::blob_from_file(&path)
                 .context("open blob input file")?
-                .write(std::fs::File::create(temp).context("construct temporary file for tree.")?)
-                .context("stream tree object into tree object file")?;
+                .write(std::fs::File::create(tmp).context("construct temporary file for blob")?)
+                .context("stream file into blob")?;
             let hash_hex = hex::encode(hash);
-            std::fs::create_dir_all(format!(".git/objects/{}/", &hash_hex[..2]))
+            fs::create_dir_all(format!(".git/objects/{}/", &hash_hex[..2]))
                 .context("create subdir of .git/objects")?;
-
             std::fs::rename(
-                temp,
-                format!(".git/objects/{}/{}", &hash_hex[..2], &hash_hex[..2]),
+                tmp,
+                format!(".git/objects/{}/{}", &hash_hex[..2], &hash_hex[2..]),
             )
-            .context("moved tree file into .git/objects")?;
+            .context("move blob file into .git/objects")?;
             hash
         };
-
         tree_object.extend(mode.as_bytes());
+        tree_object.push(b' ');
         tree_object.extend(file_name.as_encoded_bytes());
         tree_object.push(0);
         tree_object.extend(hash);
     }
+
     if tree_object.is_empty() {
         Ok(None)
     } else {
@@ -91,8 +112,10 @@ pub(crate) fn write_tree_for(path: &Path) -> anyhow::Result<Option<[u8; 20]>> {
 
 pub(crate) fn invoke() -> anyhow::Result<()> {
     let Some(hash) = write_tree_for(Path::new(".")).context("construct root tree object")? else {
-        anyhow::bail!("asked to make tree object for empty tree.");
+        anyhow::bail!("asked to make tree object for empty tree");
     };
-    println!("{}", encode(hash));
+
+    println!("{}", hex::encode(hash));
+
     Ok(())
 }
