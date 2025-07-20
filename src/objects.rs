@@ -8,7 +8,6 @@ use std::fs::File;
 use std::io::copy;
 use std::io::prelude::*;
 use std::io::BufReader;
-use std::io::Cursor;
 use std::io::Write;
 use std::path::Path;
 #[derive(Debug, PartialEq, Eq)]

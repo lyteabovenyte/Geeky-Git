@@ -9,9 +9,24 @@ use crate::objects::{Kind, Object};
 pub(crate) fn write_tree_for(path: &Path) -> anyhow::Result<Option<[u8; 20]>> {
     let mut dir =
         fs::read_dir(path).with_context(|| format!("open directory {}", path.display()))?;
-    let mut tree_object = Vec::new();
+
+    let mut entries = Vec::new();
     while let Some(entry) = dir.next() {
         let entry = entry.with_context(|| format!("bad directory {}", path.display()))?;
+        entries.push(entry);
+    }
+    entries.sort_unstable_by(|a, b| {
+        let afn = a.file_name();
+        let bfn = b.file_name();
+        let mut afn = afn.into_encoded_bytes();
+        let mut bfn = bfn.into_encoded_bytes();
+        afn.push(0xff);
+        bfn.push(0xff);
+        afn.cmp(&bfn)
+    });
+
+    let mut tree_object = Vec::new();
+    for entry in entries {
         let file_name = entry.file_name();
         if file_name == ".git" {
             // skip the .git directory
@@ -77,7 +92,7 @@ pub(crate) fn write_tree_for(path: &Path) -> anyhow::Result<Option<[u8; 20]>> {
 pub(crate) fn invoke() -> anyhow::Result<()> {
     let Some(hash) = write_tree_for(Path::new(".")).context("construct root tree object")? else {
         anyhow::bail!("asked to make tree object for empty tree.");
-    }
+    };
     println!("{}", encode(hash));
     Ok(())
 }
