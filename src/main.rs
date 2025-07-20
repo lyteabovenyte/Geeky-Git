@@ -1,11 +1,12 @@
 use clap::{Parser, Subcommand};
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 pub(crate) mod commands;
 pub(crate) mod objects;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debig)]
 #[command(version, about, long_about = None)]
 struct Args {
     #[command(subcommand)]
@@ -30,6 +31,10 @@ enum Command {
         name_only: bool,
         tree_hash: String,
     },
+    WriteTree {
+        #[clap(long)]
+        path: &Path,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -52,6 +57,7 @@ fn main() -> anyhow::Result<()> {
             name_only,
             tree_hash,
         } => commands::ls_tree::invoke(name_only, &tree_hash)?,
+        Command::WriteTree { path } => commands::write_tree::write_tree_for(path)?,
     }
     Ok(())
 }
