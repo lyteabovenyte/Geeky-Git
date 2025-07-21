@@ -12,4 +12,5 @@
 
 #### More on git:
 Git book: https://git-scm.com/book/en/v2
+<br />
 Git blog post: https://wyag.thb.lt/#intro
