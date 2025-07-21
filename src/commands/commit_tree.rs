@@ -1,11 +1,7 @@
 use crate::objects::{Kind, Object};
 use anyhow::Context;
-use std::cmp::Ordering;
 use std::fmt::Write;
-use std::fs;
 use std::io::Cursor;
-use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
 
 pub(crate) fn write_commit(
     message: &str,
