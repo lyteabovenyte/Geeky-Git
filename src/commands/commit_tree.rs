@@ -21,7 +21,7 @@ pub(crate) fn write_commit(
         commit,
         "committer lyteabovenyte <lyteabovenyte@gmail.com> 1753053612 +0330"
     )?;
-    writeln!(commit, "")?;
+    writeln!(commit, "")?; 
     writeln!(commit, "{message}")?;
     Object {
         kind: Kind::Commit,
