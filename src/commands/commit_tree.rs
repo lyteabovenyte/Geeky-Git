@@ -7,11 +7,11 @@ use std::io::Cursor;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
-pub(crate) fn invoke(
-    message: String,
-    tree_hash: String,
-    parent_hash: Option<String>,
-) -> anyhow::Result<()> {
+pub(crate) fn write_commit(
+    message: &str,
+    tree_hash: &str,
+    parent_hash: Option<&str>,
+) -> anyhow::Result<[u8; 20]> {
     let mut commit = String::new();
     writeln!(commit, "tree {tree_hash}")?;
     if let Some(parent_hash) = parent_hash {
@@ -27,13 +27,22 @@ pub(crate) fn invoke(
     )?;
     writeln!(commit, "")?;
     writeln!(commit, "{message}")?;
-    let hash = Object {
+    Object {
         kind: Kind::Commit,
         expected_size: commit.len() as u64,
         reader: Cursor::new(commit),
     }
     .write_to_objects()
-    .context("write commit object")?;
+    .context("write commit object")
+}
+
+pub(crate) fn invoke(
+    message: String,
+    tree_hash: String,
+    parent_hash: Option<String>,
+) -> anyhow::Result<()> {
+    let hash =
+        write_commit(&message, &tree_hash, parent_hash.as_deref()).context("create commit")?;
     println!("{}", hex::encode(hash));
     Ok(())
 }
